@@ -1,0 +1,96 @@
+---
+title: |
+  Taylor & Francis Rmarkdown template for authors (\LaTeX\-based 
+  \textsf{Interact} layout + Chicago author-date reference style)
+type: Course Project
+author:
+  - name: Beining Wu
+    affil: 1
+    email: andrewwu@mail.ustc.edu.cn
+affiliation:
+  - num: a
+    address: |
+      Department of Statistics and Finance, University of Science and Technology of China, Hefei, 230026
+abstract: |
+  Remains
+keywords: |
+  Remains
+header-includes: |
+  \usepackage{hyperref}
+  \usepackage[utf8]{inputenc}
+  \def\tightlist{}
+  \usepackage{xeCJK}
+output: rticles::tf_article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preliminaries
+
+```{r}
+data <- read.csv(file = "data.csv", head=TRUE, fileEncoding = "UTF8")
+attach(data)
+library(mapchina)
+library(tidyverse)
+library(sf)
+library(fitdistrplus)
+```
+
+# Data Overview
+First we take a glance at the distrbution of the `rent` variable. d`
+```{r}
+head(data)
+summary(data)
+hist(rent, breaks = "scott", main = "Histogram of Rent", xlab = "Monthly Rent Price", ylab = "Frequency", freq = FALSE)
+lines(density(rent))
+```
+
+
+# Fitting
+
+From the histogram plot we may hypothesis that the distribution is gamma.
+```{r}
+library(fitdistrplus)
+library(MASS)
+fit.gamma <- fitdist(rent, distr = "gamma", method = "mle")
+summary(fit.gamma)
+plot(fit.gamma)
+```
+
+
+# Mean Unit Value in Each District
+
+Now we consider the mean rent in each district.
+```{r}
+
+unit <- data$rent/data$area
+
+mean_unit_reg <- c(mean(unit[region=="东城"]),mean(unit[region=="西城"]),mean(unit[region=="昌平"]),mean(unit[region=="大兴"]),mean(unit[region=="房山"]),mean(unit[region=="怀柔"]),mean(unit[region=="门头沟"]),mean(unit[region=="密云"]),mean(unit[region=="平谷"]),mean(unit[region=="顺义"]),mean(unit[region=="通州"]),mean(unit[region=="延庆"]),mean(unit[region=="朝阳"]),mean(unit[region=="丰台"]),mean(unit[region=="海淀"]),mean(unit[region=="石景山"]))
+
+
+mean_unit_reg[is.na(mean_unit_reg)]=0
+```
+
+And we can visualize as follows.
+
+```{r}
+df <- china %>%
+        filter(Name_Province == "北京市")
+
+ggplot(data = df) +
+        geom_sf(aes(fill = rank(mean_unit_reg))) +
+        scale_fill_distiller(palette = "BuPu", direction = 1) +
+        theme_bw() +
+        theme(legend.position = "none")
+```
+
+From the map we know that the unit price is significantly **higher** when location is more central. Now the
+
+# Mean Unit Value and Subway 
+
+```{r}
+boxplot(rent~subway, main="Boxplot of Rent, Grouing by Subway")
+
+```

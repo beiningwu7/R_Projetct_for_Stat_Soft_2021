@@ -1,0 +1,259 @@
+---
+title: "Statistical Software Project"
+author: "Beining Wu"
+date: "12/26/2021"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preliminaries
+
+```{r}
+data <- read.csv(file = "data.csv", head=TRUE, fileEncoding = "UTF8")
+attach(data)
+library(mapchina)
+library(tidyverse)
+library(sf)
+library(fitdistrplus)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+```
+## Preprocessing
+
+```{r}
+library(pinyin)
+data$reg_py <- py(data$region,sep="")
+```
+This `py` function transfer the Chinese character into pinyin, which prevents some display error from happening.
+
+# Data Overview
+
+```{r}
+head(data)
+```
+
+
+## Rent Price Variable
+
+First we take a glance at the distrbution of the `rent` variable. d`
+```{r}
+summary(rent)
+
+unit <- data$rent/data$area
+
+par(mfrow=c(1,2))
+hist(rent, breaks = "scott", main = "Histogram of Rent", 
+     xlab = "Monthly Rent Price", ylab = "Normalized Probability", freq = FALSE)
+lines(density(rent))
+
+hist(unit, breaks = "scott", main = "Histogram of Rent per Unit Area", 
+     xlab = "Monthly Rent Price per Area", ylab = "Normalized Probability", freq = FALSE)
+lines(density(unit))
+```
+
+These two histogram plots look very similar.
+
+## Areas
+```{r}
+hist(data$area,breaks="scott")
+summary(data$area)
+quantile(data$area,c(0.025,0.975))
+```
+
+Most of the area values (about 95) concentrate in the interval $[7,23]$
+
+## Variable Reduction
+
+In this part we mainly consider two variables, the number of livingroom and bathroom. First we notice that most of the entries contains only **one** living room and one **bathroom**.
+```{r}
+table(livingroom)
+table(bathroom)
+sum(livingroom==1&bathroom==1)
+table(heating)
+```
+
+Therefore, we can omit those entries with more than 1 living room and bathroom in the following context, basically regarding them as outliers. 
+
+# Distribution Fitting
+
+## Basic Fitting with Gamma
+
+From the histogram plot we may hypothesis that the distribution is Gamma $\Gamma( \alpha, \beta)$ shaped. Hence in this section we'd like to test this fitting hypothesis. We use the `fitdisplus` package, which provides utilities for distribution fitting. 
+ 
+```{r}
+library(fitdistrplus)
+library(MASS)
+fit.gamma <- fitdist(rent, distr = "gamma", method = "mle")
+summary(fit.gamma)
+plot(fit.gamma)
+```
+
+From this fitting result we may conclude that the gamma dsitribution fits the sample well. Next we shall derive some goodness of fit statistic.
+
+## Goodness-of-Fit Test
+```{r}
+gofstat(fit.gamma)
+```
+
+From this goodness of fit statistic we can conclude that the fit is well. And we can approximate the data with a gamma random variable.
+
+# Correlation Analyis
+
+## Area and Room Type
+
+In this section, we consider whether the type of the room, i.e. the master bedroom or the secondary would significantly affect rent per unit area. Normally, we believe that the areas are dinstinct between the master and the secondary.
+```{r}
+area_master <- data$area[which(room=="主卧")]
+area_secondary <- data$
+area[which(room=="次卧")]
+hist(area_master)
+hist(area_secondary)
+
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(showtext)
+
+ggplot(data, aes(x=area, fill=room)) +
+    geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', binwidth = 1) +
+    scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="Room Type") +
+    ggtitle("Area Histogram for Each Room Type") +
+    ylab("Frequency")
+```
+
+This grouping histogram shows a trend main room tends to have larger area than the secondary room. But the area distribution of these two groups **does not** separate significantly.
+
+
+## Room Type and Unit Rent
+
+Furthermore, we study the relation of the rent per unit area and room type.
+
+```{r}
+data$unit <- unit
+ggplot(data, aes(x=unit, fill=room)) +
+    geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', binwidth = 20) +
+    scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="1")
+
+plot(unit, col=1+(room=="主卧"))
+legend(x=4000,y=550,legend=c("Main","Secondary"),col=c("red","black"),pch=1)
+```
+From the scatter plot we discover that main room tends to have lower unit price. This is partly because the main room has larger area, but the rent price is not totally proportional to the area, which is to say, the price grows slower than the area does.
+
+## Number of Rooms and Rent Price
+
+Intuitively the number of rooms would not significantly affect the rent price. From the analysis above we find that the number of living room and bathroom could be dropped as most entries contain only one living room and bathroom, and only a minority of entries are non-trivial. So here we only study the number of bedroom. 
+```{r}
+boxplot(rent~bedroom,data=data,main="Boxplot of Rent Price with Different Number of Bedrooms")
+boxplot(unit~bedroom,data=data,main="Boxplot of Unit Rent Price with Different Number of Bedrooms")
+```
+Both these two plots indicate that the number of the bedroom is not significantly related to the price. Therefore we shall exclude all the "number of the room" variable in the final regression model.
+
+# Differences across Districts
+
+##  Areas and Districts
+
+```{r}
+d1 <- aggregate(data$area,list(data$region),FUN = mean)
+d2 <- aggregate(data$area,list(data$region),FUN = sd)
+d <- merge(d1,d2,by="Group.1")
+colnames(d)=c("region","mean","stdev")
+```
+
+
+From this table we can find that the mean of area doesn't tend to be significantly different across groups.
+
+## Price in Each Districts
+
+We first draw a boxplot to visualize the rent distribution in each region.
+
+```{r}
+boxplot(rent~reg_py,data=data,las=2,main="Boxplot of Rent in Different Regions", ylab="Rent",xlab="")
+```
+This boxplot
+
+To simplify the problem, we only consider the mean rent price in each district in the following analysis.
+```{r}
+mean_unit_reg <- c(mean(unit[region=="东城"]),mean(unit[region=="西城"]),mean(unit[region=="昌平"]),mean(unit[region=="大兴"]),mean(unit[region=="房山"]),mean(unit[region=="怀柔"]),mean(unit[region=="门头沟"]),mean(unit[region=="密云"]),mean(unit[region=="平谷"]),mean(unit[region=="顺义"]),mean(unit[region=="通州"]),mean(unit[region=="延庆"]),mean(unit[region=="朝阳"]),mean(unit[region=="丰台"]),mean(unit[region=="海淀"]),mean(unit[region=="石景山"]))
+
+mean_unit_reg[is.na(mean_unit_reg)]=0
+
+r1 <- as.data.frame(aggregate(rent,list(region), mean))
+r2 <- as.data.frame(aggregate(unit,list(region), mean))
+colnames(r1) <- c("Region", "rent")
+colnames(r2) <- c("Region", "unit")
+reg <- c("Dongcheng","Fengtai","Daxing","Fangshan","Changping","Chaoyang","Haidian","Shijingshan","Xicheng","Tongzhou","Shunyi")
+rr <- merge(r1,r2,by="Region")
+rr$Region <- reg
+
+
+rr %>% gather(key="type", value = "count", -Region) %>%
+  ggplot(aes(x=Region, y=count, fill = type))+geom_bar(stat = "identity", position = "dodge")
+```
+
+And we can visualize as follows.
+
+```{r}
+df <- china %>%
+        filter(Name_Province == "北京市")
+
+ggplot(data = df) +
+        geom_sf(aes(fill = rank(mean_unit_reg))) +
+        scale_fill_distiller(palette = "BuPu", direction = 1) +
+        theme_bw() +
+        theme(legend.position = "none")
+```
+
+From the map we know that the unit price is significantly **higher** when location is more central. 
+
+## Area-Rent Plot in Differenet Regions
+
+In this part, we continue to study the rent and area in different regions. Consider the scatter plots in different regions
+
+```{r, fig.height=15,fig.width=20}
+par(mfrow=c(4,3))
+for(s in unique(region)){
+  subset <- data[region==s,]
+  plot(subset$area,subset$rent)
+}
+```
+
+From this plot we can conclude that the rent-area trend are approximately the same across different regions. 
+
+## Subway and Districts
+
+Intuitively, central districts tend to have higer density of subway station. In this section we shall study whether or not this is true for the house price data.
+
+```{r}
+prop.table(table(data[,c("subway","region")]),2)
+```
+
+The fact is that the subway system in Beijing is massive, and most of the central regions share a $80\% -90%$ proportion of houses. The difference of subway proportion is not significant between different regions. Which means we should study the influence of subway separately.
+
+
+# Regression Model
+
+Now we would do simple regressions on the house price data.
+
+```{r}
+fit <- lm(rent~area+floor_grp+subway+heating+region, data=data)
+summary(fit)
+plot(fit)
+```
+The linear model behaves badly, because the multiple $R^2$ is small. From the residuals plot we can find that the residuals are in-homogeneous and residual standard error is significant. Linearity is good from the residual plots. This phenomenon implies that there are some key explanatory variables which is excluded from the data! The linear model is not sufficient to provide a valid prediction model. We need some auxilliray variables to reduce the residuals standard error. 
+
+Again, from the regression summary we may find that the **high floor** is not significant. This implies that, the consumers would not distinct high floors greatly from the middle floor. But the coefficients of the low floor is significant. 
+
+On the other hand, the coefficient of Chaoyang district is not significant. This is partly because Chaoyang district is cloes to the region of base factor.
+
+
+# Conclusion
+In this course project we mainly studied the Beijing house price data. We first summarized this data by viewing the characteristic of each variables and do some visualization. Based on this, we excluded some variables that are unnecessary in our correlation analysis. From the data visualization in the aforementioned part, we fit the rent with a Gamma distribution, and checked the goodness of fit statistic to find that our fit is good. Then we studied the correlation of some non-region variable, which could also simplify our model. Differences across each regions are checked later. Finally, we carried out a simple regression to summary the data, and find that there are some explanatory variables out-there, and the linear model is not able to provide a valid prediction.
+
